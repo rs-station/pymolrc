@@ -1,0 +1,112 @@
+python 
+import subprocess
+import sys
+
+dependencies = [
+    'gemmi',
+    'gemmi-program', 
+    'matplotlib'
+]
+subprocess.check_call([sys.executable, "-m", "pip", "install", *dependencies])
+
+import matplotlib as mpl
+import numpy as np
+from pymol import cmd
+import gemmi
+import tempfile
+
+# Dark2
+hex_palette={
+    'cb_green'  : "#1b9e77",
+    'cb_orange' : "#d95f02",
+    'cb_blue'   : "#7571b3",
+}
+
+for k,v in hex_palette.items():
+    r,g,b = mpl.colors.to_rgb(v)
+    cmd.set_color(k, [r, g, b])
+
+def cmap_to_ramp(ramp_name, cmap_name, stops, alphas, norm=None):
+    try:
+        alphas = float(alphas)
+        alphas = [alphas] * len(stops)
+    except:
+        pass
+
+    if norm is None:
+        vmin,vmax = np.min(stops),np.max(stops)
+        norm = mpl.colors.Normalize(vmin, vmax)
+
+    cmap = mpl.cm.ScalarMappable(norm, cmap_name)
+    ramp_str = ""
+    for stop,alpha in zip(stops, alphas):
+        r,g,b,a = cmap.to_rgba(stop)
+        hex = mpl.colors.to_hex([r, g, b])
+        hex = f'0x{hex[1:]}'
+        ramp_str += f'{stop} {hex} {alpha} '
+
+    cmd.volume_ramp_new(ramp_name, ramp_str)
+
+# Define some default volume ramps for common uses
+alpha=0.3 #map opacity
+cmap_to_ramp(
+    'electron_density', 'cividis', 
+    [1.0, 1.5, 2.25, 2.5, 3.25, 3.5, 4.0],
+    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+)
+
+sigmas = np.array([3.0, 4.0, 5.0])
+cmap_to_ramp(
+    'difference_plus', 'Greens',
+    [2.5, 3.0, 3.50, 4.0, 4.50, 5.0, 5.5],
+    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+)
+cmap_to_ramp(
+    'difference_minus', 'Purples',
+    [-5.5, -5.0, -4.5, -4.0, -3.5, -3.0, -2.5],
+    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+)
+cmd.volume_ramp_new(
+    'anomramp', 
+    '3.0 cb_orange 0.0 5.0 cb_orange 0.3 7.0 cb_orange 0.0',
+)
+
+
+#MTZ Parsing helpers here
+def gemmi_load_mtz(mtz_file, object_name, fkey, pkey):
+    print(f"loading map coefficients {fkey}, {pkey} from {mtz_file} into {object_name}")
+    with tempfile.NamedTemporaryFile(suffix='.map') as map_file:
+        subprocess.check_call(f'gemmi sf2map -f {fkey} -p {pkey} {mtz_file} {map_file.name}'.split())
+        cmd.load(map_file.name, object_name)
+
+def load_phenix(mtz_file, pdb_file):
+    cmd.load(pdb_file)
+    cmd.set('stick_radius', 0.2)
+    cmd.set('valence', 'false')
+    cmd.color('grey80', 'All')
+    cmd.util.cnc()
+    cmd.hide('everything', 'polymer or solvent or metals or organic')
+    cmd.show('sticks')
+    gemmi_load_mtz(mtz_file, '2fofc_map', '2FOFCWT', 'PH2FOFCWT')
+    gemmi_load_mtz(mtz_file, 'fofc_map', 'FOFCWT', 'PHFOFCWT')
+    mtz = gemmi.read_mtz_file(mtz_file)
+    columns = mtz.column_labels()
+    cmd.volume('2fofc', '2fofc_map', ramp='electron_density', selection=pdb_file.removesuffix('.pdb'))
+    cmd.show('volume', '2fofc')
+    cmd.volume('fofc_p', 'fofc_map', ramp='difference_plus', selection=pdb_file.removesuffix('.pdb'))
+    cmd.show('volume', 'fofc_p')
+    cmd.volume('fofc_m', 'fofc_map', ramp='difference_minus', selection=pdb_file.removesuffix('.pdb'))
+    cmd.show('volume', 'fofc_m')
+    if 'ANOM' in columns:
+        phase_key = 'PANOM' #default for new phenix
+        if 'PHANOM' in columns:
+            phase_key = 'PHANOM' 
+        gemmi_load_mtz(mtz_file, 'anom_map', 'ANOM', phase_key)
+        cmd.volume('anom', 'anom_map', ramp='anomramp', selection=pdb_file.removesuffix('.pdb'))
+        cmd.show('volume', 'anom')
+python end
+
+
+bg_color white
+set roving_origin, false
+
