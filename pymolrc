@@ -107,6 +107,3 @@ def load_phenix(mtz_file, pdb_file):
 python end
 
 
-bg_color white
-set roving_origin, false
-
