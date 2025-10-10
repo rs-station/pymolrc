@@ -135,7 +135,7 @@ except ImportError:
 try:
     import gemmi
     cmd.extend('load_phenix', load_phenix)
-    cmd.extend('load_mtz', gemmi_load_mtz)
+    cmd.extend('gemmi_load_mtz', gemmi_load_mtz)
 except ImportError:
     warn(f"Gemmi not found, cannot load maps mtz files!")
 
