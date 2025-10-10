@@ -18,4 +18,4 @@ The function will automatically load the 2Fo-Fc and Fo-Fc maps,
 ![maps](data/maps.png)
 
 As well as the anomalous difference map if present,
-![anom](data/anomalous.png)
+![anom](data/anom.png)
