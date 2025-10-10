@@ -20,6 +20,8 @@ hex_palette={
     'cb_green'  : "#1b9e77",
     'cb_orange' : "#d95f02",
     'cb_blue'   : "#7571b3",
+    'cb_purple' : "#7b3294",
+    'cb_green_2' : "#008837",
 }
 
 for k,v in hex_palette.items():
@@ -55,16 +57,13 @@ cmap_to_ramp(
     [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
 )
 
-sigmas = np.array([3.0, 4.0, 5.0])
-cmap_to_ramp(
-    'difference_plus', 'Greens',
-    [2.5, 3.0, 3.50, 4.0, 4.50, 5.0, 5.5],
-    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+cmd.volume_ramp_new(
+    'difference_plus', 
+    '3.0 cb_green_2 0.0 3.5 cb_green_2 0.3 4.0 cb_green_2 0.0',
 )
-cmap_to_ramp(
-    'difference_minus', 'Purples',
-    [-5.5, -5.0, -4.5, -4.0, -3.5, -3.0, -2.5],
-    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+cmd.volume_ramp_new(
+    'difference_minus', 
+    '-4.0 cb_purple 0.0 -3.5 cb_purple 0.3 -3.0 cb_purple 0.0',
 )
 cmd.volume_ramp_new(
     'anomramp', 
@@ -104,6 +103,10 @@ def load_phenix(mtz_file, pdb_file):
         gemmi_load_mtz(mtz_file, 'anom_map', 'ANOM', phase_key)
         cmd.volume('anom', 'anom_map', ramp='anomramp', selection=pdb_file.removesuffix('.pdb'))
         cmd.show('volume', 'anom')
+
+cmd.extend('load_phenix', load_phenix)
 python end
 
 
+set roving_origin, false
+bg_color white
