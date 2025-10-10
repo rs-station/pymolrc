@@ -1,34 +1,48 @@
 python 
+# Natively supported imports
 import subprocess
 import sys
+from warnings import warn
+from pymol import cmd
+import numpy as np
+import tempfile
 
+# New dependencies
 dependencies = [
     'gemmi',
     'gemmi-program', 
     'matplotlib'
 ]
-subprocess.check_call([sys.executable, "-m", "pip", "install", *dependencies])
 
-import matplotlib as mpl
-import numpy as np
-from pymol import cmd
-import gemmi
-import tempfile
+for dependency in dependencies:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", dependency])
+    except subprocess.CalledProcessError:
+        warn(f"Unable to install or verify dependency {dependency}, some features may not function as intented! Please check your internet connection and file an issue at https://github.com/rs-station/pymolrc/issues/new/choose")
 
 # Dark2
 hex_palette={
-    'cb_green'  : "#1b9e77",
-    'cb_orange' : "#d95f02",
-    'cb_blue'   : "#7571b3",
-    'cb_purple' : "#7b3294",
-    'cb_green_2' : "#008837",
+    'cb_green'   : "0x1b9e77",
+    'cb_orange'  : "0xd95f02",
+    'cb_blue'    : "0x7571b3",
+    'cb_purple'  : "0x7b3294",
+    'cb_green_2' : "0x008837",
+    'cividis_1'  : '0x00224e',
+    'cividis_2'  : '0x2a3f6d',
+    'cividis_3'  : '0x6a6c71',
+    'cividis_4'  : '0x7d7c78',
+    'cividis_5'  : '0xbcae6c',
+    'cividis_6'  : '0xd2c060',
+    'cividis_7'  : '0xfee838',
 }
 
 for k,v in hex_palette.items():
-    r,g,b = mpl.colors.to_rgb(v)
+    r,g,b = cmd.get_color_tuple(v)
+    print(f"{k}: [{r}, {g}, {b}]")
     cmd.set_color(k, [r, g, b])
 
 def cmap_to_ramp(ramp_name, cmap_name, stops, alphas, norm=None):
+    import matplotlib as mpl
     try:
         alphas = float(alphas)
         alphas = [alphas] * len(stops)
@@ -47,16 +61,22 @@ def cmap_to_ramp(ramp_name, cmap_name, stops, alphas, norm=None):
         hex = f'0x{hex[1:]}'
         ramp_str += f'{stop} {hex} {alpha} '
 
+    print(ramp_str)
     cmd.volume_ramp_new(ramp_name, ramp_str)
 
 # Define some default volume ramps for common uses
 alpha=0.3 #map opacity
-cmap_to_ramp(
-    'electron_density', 'cividis', 
-    [1.0, 1.5, 2.25, 2.5, 3.25, 3.5, 4.0],
-    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
-)
 
+# The 'electron_density' ramp is equivalent to this:
+#cmap_to_ramp(
+#    'electron_density', 'cividis', 
+#    [1.0, 1.5, 2.25, 2.5, 3.25, 3.5, 4.0],
+#    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
+#)
+cmd.volume_ramp_new(
+    'electron_density', 
+    f'1.0 cividis_1 0.0 1.5 cividis_2 {alpha} 2.25 cividis_3 0.0 2.5 cividis_4 {alpha} 3.25 cividis_5 0.0 3.5 cividis_6 {alpha} 4.0 cividis_7 0.0',
+)
 cmd.volume_ramp_new(
     'difference_plus', 
     '3.0 cb_green_2 0.0 3.5 cb_green_2 0.3 4.0 cb_green_2 0.0',
@@ -70,9 +90,9 @@ cmd.volume_ramp_new(
     '3.0 cb_orange 0.0 5.0 cb_orange 0.3 7.0 cb_orange 0.0',
 )
 
-
 #MTZ Parsing helpers here
 def gemmi_load_mtz(mtz_file, object_name, fkey, pkey):
+    import gemmi
     print(f"loading map coefficients {fkey}, {pkey} from {mtz_file} into {object_name}")
     with tempfile.NamedTemporaryFile(suffix='.map') as map_file:
         subprocess.check_call(f'gemmi sf2map -f {fkey} -p {pkey} {mtz_file} {map_file.name}'.split())
@@ -86,6 +106,8 @@ def load_phenix(mtz_file, pdb_file):
     cmd.util.cnc()
     cmd.hide('everything', 'polymer or solvent or metals or organic')
     cmd.show('sticks')
+    cmd.set('sphere_scale', 0.2)
+    cmd.show('spheres', 'sol or metals')
     gemmi_load_mtz(mtz_file, '2fofc_map', '2FOFCWT', 'PH2FOFCWT')
     gemmi_load_mtz(mtz_file, 'fofc_map', 'FOFCWT', 'PHFOFCWT')
     mtz = gemmi.read_mtz_file(mtz_file)
@@ -104,7 +126,19 @@ def load_phenix(mtz_file, pdb_file):
         cmd.volume('anom', 'anom_map', ramp='anomramp', selection=pdb_file.removesuffix('.pdb'))
         cmd.show('volume', 'anom')
 
-cmd.extend('load_phenix', load_phenix)
+# Test imports and export functions accordingly
+try:
+    import matplotlib as mpl
+    cmd.extend('cmap_to_ramp', cmap_to_ramp)
+except ImportError:
+    warn(f"Matplotlib not found, cannot create ramps from colormaps!")
+try:
+    import gemmi
+    cmd.extend('load_phenix', load_phenix)
+    cmd.extend('load_mtz', gemmi_load_mtz)
+except ImportError:
+    warn(f"Gemmi not found, cannot load maps mtz files!")
+
 python end
 
 
