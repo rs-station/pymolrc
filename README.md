@@ -19,3 +19,7 @@ The function will automatically load the 2Fo-Fc and Fo-Fc maps,
 
 As well as the anomalous difference map if present,
 ![anom](data/anom.png)
+
+# Gallery
+Difference peaks are rendered in purple / green for colorblind friendliness
+![difference](data/difference.png)
