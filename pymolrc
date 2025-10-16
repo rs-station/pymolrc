@@ -20,6 +20,8 @@ for dependency in dependencies:
     except subprocess.CalledProcessError:
         warn(f"Unable to install or verify dependency {dependency}, some features may not function as intented! Please check your internet connection and file an issue at https://github.com/rs-station/pymolrc/issues/new/choose")
 
+volume_alpha=0.3 #map opacity
+
 # Dark2
 hex_palette={
     'cb_green'   : "0x1b9e77",
@@ -64,31 +66,30 @@ def cmap_to_ramp(ramp_name, cmap_name, stops, alphas, norm=None):
     print(ramp_str)
     cmd.volume_ramp_new(ramp_name, ramp_str)
 
-# Define some default volume ramps for common uses
-alpha=0.3 #map opacity
+def single_contour_ramp(name : str, color : str, sigma : float, width : float, alpha : float):
+    cmd.volume_ramp_new(
+        name,
+        f'{sigma - width} {color} 0.0 {sigma} {color} {alpha} {sigma + width} {color} 0.0',
+    )
 
-# The 'electron_density' ramp is equivalent to this:
-#cmap_to_ramp(
-#    'electron_density', 'cividis', 
-#    [1.0, 1.5, 2.25, 2.5, 3.25, 3.5, 4.0],
-#    [0.0, alpha, 0.0, alpha, 0.0, alpha, 0.0],
-#)
+def set_anom_sigma(sigma=5., width=2.0, alpha=volume_alpha):
+    sigma,width,alpha = map(float, (sigma, width, alpha))
+    single_contour_ramp('anomramp', 'cb_orange', sigma, width, alpha)
+
+def set_difference_sigma(sigma=3.5, width=0.5, alpha=volume_alpha):
+    sigma,width,alpha = map(float, (sigma, width, alpha))
+    single_contour_ramp('difference_plus', 'cb_green', sigma, width, alpha)
+    single_contour_ramp('difference_minus', 'cb_purple', -sigma, width, alpha)
+
+
+set_anom_sigma()
+set_difference_sigma()
+
 cmd.volume_ramp_new(
     'electron_density', 
-    f'1.0 cividis_1 0.0 1.5 cividis_2 {alpha} 2.25 cividis_3 0.0 2.5 cividis_4 {alpha} 3.25 cividis_5 0.0 3.5 cividis_6 {alpha} 4.0 cividis_7 0.0',
+    f'1.0 cividis_1 0.0 1.5 cividis_2 {volume_alpha} 2.25 cividis_3 0.0 2.5 cividis_4 {volume_alpha} 3.25 cividis_5 0.0 3.5 cividis_6 {volume_alpha} 4.0 cividis_7 0.0',
 )
-cmd.volume_ramp_new(
-    'difference_plus', 
-    '3.0 cb_green_2 0.0 3.5 cb_green_2 0.3 4.0 cb_green_2 0.0',
-)
-cmd.volume_ramp_new(
-    'difference_minus', 
-    '-4.0 cb_purple 0.0 -3.5 cb_purple 0.3 -3.0 cb_purple 0.0',
-)
-cmd.volume_ramp_new(
-    'anomramp', 
-    '3.0 cb_orange 0.0 5.0 cb_orange 0.3 7.0 cb_orange 0.0',
-)
+
 
 #MTZ Parsing helpers here
 def gemmi_load_mtz(mtz_file, object_name, fkey, pkey):
@@ -98,33 +99,43 @@ def gemmi_load_mtz(mtz_file, object_name, fkey, pkey):
         subprocess.check_call(f'gemmi sf2map -f {fkey} -p {pkey} {mtz_file} {map_file.name}'.split())
         cmd.load(map_file.name, object_name)
 
-def load_phenix(mtz_file, pdb_file):
+def load_pdb(pdb_file, name=None):
+    if name is None:
+        name = pdb_file.removesuffix('.pdb')
     cmd.load(pdb_file)
     cmd.set('stick_radius', 0.2)
     cmd.set('valence', 'false')
     cmd.color('grey80', 'All')
+    cmd.color('black', 'organic and name c*')
     cmd.util.cnc()
     cmd.hide('everything', 'polymer or solvent or metals or organic')
     cmd.show('sticks')
     cmd.set('sphere_scale', 0.2)
     cmd.show('spheres', 'sol or metals')
+
+def load_phenix_mtz(mtz_file, selection=None, carve=None):
     gemmi_load_mtz(mtz_file, '2fofc_map', '2FOFCWT', 'PH2FOFCWT')
     gemmi_load_mtz(mtz_file, 'fofc_map', 'FOFCWT', 'PHFOFCWT')
     mtz = gemmi.read_mtz_file(mtz_file)
     columns = mtz.column_labels()
-    cmd.volume('2fofc', '2fofc_map', ramp='electron_density', selection=pdb_file.removesuffix('.pdb'))
+    cmd.volume('2fofc', '2fofc_map', ramp='electron_density', selection=selection, carve=carve)
     cmd.show('volume', '2fofc')
-    cmd.volume('fofc_p', 'fofc_map', ramp='difference_plus', selection=pdb_file.removesuffix('.pdb'))
+    cmd.volume('fofc_p', 'fofc_map', ramp='difference_plus', selection=selection, carve=carve)
     cmd.show('volume', 'fofc_p')
-    cmd.volume('fofc_m', 'fofc_map', ramp='difference_minus', selection=pdb_file.removesuffix('.pdb'))
+    cmd.volume('fofc_m', 'fofc_map', ramp='difference_minus', selection=selection, carve=carve)
     cmd.show('volume', 'fofc_m')
     if 'ANOM' in columns:
         phase_key = 'PANOM' #default for new phenix
         if 'PHANOM' in columns:
             phase_key = 'PHANOM' 
         gemmi_load_mtz(mtz_file, 'anom_map', 'ANOM', phase_key)
-        cmd.volume('anom', 'anom_map', ramp='anomramp', selection=pdb_file.removesuffix('.pdb'))
+        cmd.volume('anom', 'anom_map', ramp='anomramp', selection=selection, carve=carve)
         cmd.show('volume', 'anom')
+
+def load_phenix(mtz_file, pdb_file, carve=None):
+    name = pdb_file.removesuffix('.pdb')
+    load_pdb(pdb_file, name)
+    load_phenix_mtz(mtz_file, selection=name, carve=carve)
 
 # Test imports and export functions accordingly
 try:
@@ -135,9 +146,14 @@ except ImportError:
 try:
     import gemmi
     cmd.extend('load_phenix', load_phenix)
+    cmd.extend('load_phenix_mtz', load_phenix_mtz)
     cmd.extend('gemmi_load_mtz', gemmi_load_mtz)
 except ImportError:
     warn(f"Gemmi not found, cannot load maps mtz files!")
+
+cmd.extend('set_anom_sigma', set_anom_sigma)
+cmd.extend('set_difference_sigma', set_difference_sigma)
+cmd.extend('load_pdb', load_pdb)
 
 python end
 
